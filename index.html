@@ -1,0 +1,356 @@
+<!DOCTYPE HTML>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="css/bootstrap.min.css"/>
+  <link rel="stylesheet" href="css/datepicker.css"/>
+</head>
+
+<body>
+
+  <div class="container">
+    <h1></h1>
+    <form class="row form-horizontal">
+      
+      <div class="control-group">
+        <label class="control-label" for="cities">Destino: </label>
+        <div class="controls">
+          <select id="cities"></select>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label class="control-label" for="hotel">Hotel: </label>
+        <div class="controls">
+          <select id="hotel"></select>
+        </div>
+      </div>
+      
+      <div class="control-group">
+        <label class="control-label" for="plans">Plan: </label>
+        <div class="controls">
+          <select id="plans"></select>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label class="control-label" for="cities">Saliendo: </label>
+        <div class="controls">
+          <input type="text" value="" data-date-format="dd-mm-yyyy" id="arrival">
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label class="control-label" for="cities">Regresando: </label>
+        <div class="controls">
+          <input type="text" value="" data-date-format="dd-mm-yyyy" id="departure">
+        </div>
+      </div>
+      
+      <div class="control-group">
+        <label class="control-label" for="adults">Adultos: </label>
+        <div class="controls">
+          <input type="number" value="" id="adults">
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label class="control-label" for="kids">Ni&ntilde;os:</label>
+        <div class="controls">
+          <input type="number" value="" id="kids">
+        </div>
+      </div>
+      <div class="control-group">
+        <div class="controls">
+          <button id="calculate" class="btn">Cotizar</button>
+        </div>
+      </div>
+    </form>
+
+    <div class="row">
+      <label id="nights"></label>
+      <h2 id="price"></h2>
+    </div>
+  </div>
+
+  <table class="hide">
+    <theader>
+      <td>destino</td>
+      <td>hotel</td>
+      <td>plan</td>
+      <td>adultos</td>
+      <td>ni&ntilde;os</td>
+      <td>total</td>
+    </theader>
+    <tbody id="hotels">
+    </tbody>
+  </table>
+
+
+  <script src="js/jquery-2.0.3.min.js"></script>
+  <script src="js/bootstrap.min.js"></script>
+  <script src="js/bootstrap-datepicker.js"></script>
+  <script src="js/taffy-min.js"></script>
+  <script>
+    var hotels;
+    var xmlhttp = new XMLHttpRequest();
+    xmlhttp.onreadystatechange = function(err){
+      try{
+        if(xmlhttp.status==200 && xmlhttp.readyState==4){
+          hotels = TAFFY(JSON.parse(xmlhttp.responseText));
+          init();
+        }
+      }catch(err){}
+    }
+    xmlhttp.open("GET","db.json",true);
+    xmlhttp.send();
+
+
+    var selectedHotels = [];
+    var $hotels = document.getElementById('hotels');
+    function render(){
+      for(var i = 0; i < selectedHotels.length; i++){
+        var item = selectedHotels[i];
+        var tr = document.createElement('tr');
+        tr.innerHTML='<td>'+item.d+'</td>'+'<td>'+item.h+'</td>'+'<td>'+item.p+'</td>';
+        $hotels.appendChild(tr);
+      }
+    };
+
+    var $cities = document.getElementById('cities');
+    $cities.onchange = function(data){
+      filterByCity($cities.value);
+    };
+
+    var $hotel = document.getElementById('hotel');
+    $hotel.onchange = function(data){
+      filterByHotel($hotel.value);
+    };
+
+    var $plan = document.getElementById('plans');
+    $plan.onchange = function(data){
+      filterByPlan($plan.value);
+    };
+
+    var $adults = document.getElementById('adults');
+    $adults.onchange = function(data){
+      queryAdults = parseInt($adults.value);
+      filterPeople();
+    };
+
+    var $kids = document.getElementById('kids');
+    $kids.onchange = function(data){
+      queryKids = parseInt($kids.value);
+      filterPeople();
+    };
+
+    var $calculate = document.getElementById('calculate');
+    $calculate.onclick = function(){
+      calculatePrice();
+    };
+
+    function populateForms(){
+      populateCities(hotels().distinct("d"));
+      populateHotels(hotels().distinct("h"));
+      populatePlans(hotels().distinct("p"));
+    }
+
+    function populateCities(cities){
+      $cities.innerHTML ='<option>-seleccione-</option>';
+      for(var i = 0; i < cities.length; i++){
+        var item = cities[i];
+        var option = document.createElement('option');
+        option.setAttribute('value', item);
+        option.innerHTML = item;
+        $cities.appendChild(option);
+      }
+    }
+
+    function populateHotels(hotel){
+      $hotel.innerHTML = '<option>-seleccione-</option>';
+      for(var i = 0; i < hotel.length; i++){
+        var item = hotel[i];
+        var option = document.createElement('option');
+        option.setAttribute('value', item);
+        option.innerHTML = item;
+        $hotel.appendChild(option);
+      }
+    }
+
+    function populatePlans(plans){
+      $plan.innerHTML = '<option>-seleccione-</option>';
+      for(var i = 0; i < plans.length; i++){
+        var item = plans[i];
+        var option = document.createElement('option');
+        option.setAttribute('value', item);
+        option.innerHTML = item;
+        $plan.appendChild(option);
+      }
+    }
+
+    function init(){
+      populateForms();
+    };
+
+    /**
+    * query stuff
+    */
+    var query = {};
+    var queryResults = {};
+    var querySeason = undefined;
+    var queryAdults = 0;
+    var queryKids = 0;
+    var totalNights = 0;
+
+    function filterByCity(city){
+      if(city!==undefined && city!==''){
+        query.d = city;
+        delete(query.h);
+        delete(query.p);
+      }
+      executeQuery();
+      populateHotels(queryResults.distinct("h"));
+      populatePlans(queryResults.distinct("p"));
+    };
+
+    function filterByHotel(hotel){
+      if(hotel!==undefined && hotel!==''){
+        query.h = hotel;
+        delete(query.p);
+      }
+      executeQuery();
+      populatePlans(queryResults.distinct("p"));
+    };
+
+    function filterByPlan(plan){
+      if(plan!==undefined && plan!==''){
+        query.p = plan;
+      }
+      executeQuery();
+    };
+
+    function filterPeople(){
+      $('#price').html('');
+      if(queryAdults+queryKids<=0){
+        return;
+      }
+      executeQuery();
+    }
+
+    function calculatePrice(){
+      if(queryAdults + queryKids <= 0 || querySeason === undefined || totalNights < 2){
+
+        return;
+      }
+      var totalPrice = 0;
+      var queryNights = "";
+      switch(totalNights){
+        case 2:
+          queryNights ='n2';
+          break;
+        case 3:
+          queryNights ='n3';
+          break;
+        case 4:
+          queryNights ='n4';
+          break;
+        default:
+          queryNights ='n5';
+          break;
+      }
+
+      for(var i=0; i<selectedHotels.length; i++){
+        var item = selectedHotels[i];
+        if(item.a==='Adulto'){
+          if(queryNights==='n5'){
+            totalPrice += parseInt(item[querySeason]['n4'])*queryAdults + parseInt(item[querySeason]['na'])*queryAdults*(totalNights-4);
+          }else{
+            totalPrice += parseInt(item[querySeason][queryNights])*queryAdults;
+          }
+        }else if(item.a==='Nino'){
+          console.log('un nino ', queryKids);
+          if(queryNights==='n5'){
+            totalPrice += parseInt(item[querySeason]['n4'])*queryKids+parseInt(item[querySeason]['na'])*queryKids*(totalNights-4);
+          }else{
+            totalPrice += parseInt(item[querySeason][queryNights])*queryKids;
+          }
+        }
+      }
+      $('#price').html('Precio Total: '+totalPrice);
+    }
+
+    function executeQuery(){
+      queryResults = hotels(query);
+      $hotels.innerHTML = '';
+      selectedHotels = [];
+      queryResults.each(function(data){
+        selectedHotels.push(data);
+      });
+      calculatePrice();
+      //render();
+    }
+
+    /**
+    * date picker functions and event managament
+    */
+    var nowTemp = new Date();
+    var now = new Date(nowTemp.getFullYear(), nowTemp.getMonth(), nowTemp.getDate(), 0, 0, 0, 0);
+    var startDate = now;
+    var endDate = undefined;
+
+    var seasons = {
+      t1: new Date(2013, 11, 19, 0, 0, 0, 0),
+      t2: new Date(2013, 11, 25, 0, 0, 0, 0),
+      t3: new Date(2014, 0, 20, 0, 0, 0, 0),
+      t4: new Date(2014, 3, 10, 0, 0, 0, 0),
+      t32: new Date(2014, 3, 21, 0, 0, 0, 0),
+      t42: new Date(2014, 5, 15, 0, 0, 0, 0)
+    };
+    function setSeason(){
+      if(startDate<=seasons.t1.valueOf()){
+        querySeason = 't1';
+      }else if(startDate<=seasons.t2.valueOf()){
+        querySeason = 't2';
+      }else if(startDate<=seasons.t3.valueOf()){
+        querySeason = 't3';
+      }else if(startDate<=seasons.t4.valueOf()){
+        querySeason = 't4';
+      }else if(startDate<=seasons.t32.valueOf()){
+        querySeason = 't3';
+      }else if(startDate<=seasons.t42.valueOf()){
+        querySeason = 't4';
+      }else{
+        querySeason = undefined;
+      }
+    }
+
+    var arrival = $('#arrival').datepicker({
+      onRender: function(date) {
+         return date.valueOf() < now.valueOf() || (endDate!==undefined && date.valueOf() > endDate.valueOf())? 'disabled' : '';
+      }
+    }).on('changeDate', function(ev){
+       
+      startDate = ev.date.valueOf();
+      setSeason();
+      departure.fill();
+      departure.setValue(startDate);
+      arrival.hide();
+      departure.show();
+      
+    }).data('datepicker');
+
+    var departure = $('#departure').datepicker({
+      onRender: function(date) {
+        return date.valueOf() < now.valueOf() || date.valueOf() < startDate.valueOf() ? 'disabled' : '';
+      }
+    }).on('changeDate', function(ev){
+      totalNights = (ev.date.valueOf()-startDate)/1000/60/60/24;
+      endDate = ev.date.valueOf();
+      arrival.fill();
+      $('#nights').html(totalNights + 'noches');
+      departure.hide();
+    }).data('datepicker');
+  </script>
+</body>
+</html>
